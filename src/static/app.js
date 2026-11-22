@@ -7,11 +7,14 @@ document.addEventListener("DOMContentLoaded", () => {
   // Function to fetch activities from API
   async function fetchActivities() {
     try {
-      const response = await fetch("/activities");
+      const response = await fetch(`/activities?refresh=${Date.now()}`, {
+        cache: "no-store",
+      });
       const activities = await response.json();
 
       // Clear loading message
       activitiesList.innerHTML = "";
+      activitySelect.querySelectorAll("option:not([value=''])").forEach((option) => option.remove());
 
       // Populate activities list
       Object.entries(activities).forEach(([name, details]) => {
@@ -25,7 +28,64 @@ document.addEventListener("DOMContentLoaded", () => {
           <p>${details.description}</p>
           <p><strong>Schedule:</strong> ${details.schedule}</p>
           <p><strong>Availability:</strong> ${spotsLeft} spots left</p>
+          <div class="participants-section">
+            <h5>Participants <span class="participant-count">${details.participants.length}</span></h5>
+            <ul class="participants-list"></ul>
+          </div>
         `;
+
+        const participantsList = activityCard.querySelector(".participants-list");
+        if (details.participants.length === 0) {
+          const emptyItem = document.createElement("li");
+          emptyItem.className = "empty-participants";
+          emptyItem.textContent = "No participants yet";
+          participantsList.appendChild(emptyItem);
+        } else {
+          details.participants.forEach((email) => {
+            const participantItem = document.createElement("li");
+
+            const emailText = document.createElement("span");
+            emailText.textContent = email;
+
+            const deleteButton = document.createElement("button");
+            deleteButton.type = "button";
+            deleteButton.className = "delete-participant";
+            deleteButton.title = `Unregister ${email}`;
+            deleteButton.setAttribute("aria-label", `Unregister ${email}`);
+            deleteButton.innerHTML = `
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7 7h10l-1 12H8L7 7Zm3-3h4l1 2h4v2H5V6h4l1-2Zm-1 5v8h2v-8H9Zm4 0v8h2v-8h-2Z"/>
+              </svg>
+            `;
+            deleteButton.addEventListener("click", async () => {
+              try {
+                const response = await fetch(
+                  `/activities/${encodeURIComponent(name)}/unregister?email=${encodeURIComponent(email)}`,
+                  { method: "DELETE" }
+                );
+                const result = await response.json();
+
+                messageDiv.textContent = response.ok
+                  ? result.message
+                  : result.detail || "Failed to unregister participant";
+                messageDiv.className = response.ok ? "success" : "error";
+                messageDiv.classList.remove("hidden");
+
+                if (response.ok) {
+                  await fetchActivities();
+                }
+              } catch (error) {
+                messageDiv.textContent = "Failed to unregister participant";
+                messageDiv.className = "error";
+                messageDiv.classList.remove("hidden");
+                console.error("Error unregistering participant:", error);
+              }
+            });
+
+            participantItem.append(emailText, deleteButton);
+            participantsList.appendChild(participantItem);
+          });
+        }
 
         activitiesList.appendChild(activityCard);
 
@@ -62,6 +122,7 @@ document.addEventListener("DOMContentLoaded", () => {
         messageDiv.textContent = result.message;
         messageDiv.className = "success";
         signupForm.reset();
+        await fetchActivities();
       } else {
         messageDiv.textContent = result.detail || "An error occurred";
         messageDiv.className = "error";
